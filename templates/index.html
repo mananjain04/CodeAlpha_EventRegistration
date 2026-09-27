@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EventHub - Event Registration System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #0f172a; color: #f8fafc; padding: 24px; }
+        .container { max-width: 950px; margin: 0 auto; }
+        
+        header { text-align: center; margin-bottom: 32px; }
+        header h1 { font-size: 32px; color: #38bdf8; margin-bottom: 8px; }
+        header p { color: #94a3b8; }
+
+        .tabs { display: flex; justify-content: center; gap: 12px; margin-bottom: 28px; }
+        .tab-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 10px 22px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; }
+        .tab-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+        .events-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .event-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
+        .event-title { font-size: 20px; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; }
+        .event-desc { color: #94a3b8; font-size: 14px; margin-bottom: 16px; line-height: 1.5; }
+        .event-info { font-size: 13px; color: #cbd5e1; margin-bottom: 6px; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+        .badge-green { background: #10b98120; color: #34d399; border: 1px solid #10b98140; }
+        .badge-red { background: #ef444420; color: #f87171; border: 1px solid #ef444440; }
+
+        .btn { background: #2563eb; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; transition: background 0.2s; }
+        .btn:hover { background: #1d4ed8; }
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; }
+
+        /* Modal styling */
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; padding: 20px; }
+        .modal-content { background: #1e293b; border: 1px solid #334155; padding: 28px; border-radius: 12px; width: 100%; max-width: 440px; }
+        .form-input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #fff; margin-bottom: 14px; outline: none; }
+        .modal-actions { display: flex; gap: 10px; }
+
+        /* Registrations section */
+        .my-regs-section { display: none; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; }
+        .ticket-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .ticket-title { font-size: 17px; font-weight: 600; color: #38bdf8; }
+        .ticket-meta { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎟️ EventHub</h1>
+            <p>Discover tech summits, workshops and register for events seamlessly.</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('events')">Browse Events</button>
+            <button class="tab-btn" onclick="switchTab('registrations')">My Registrations</button>
+        </div>
+
+        <!-- 1. Browse Events View -->
+        <div id="eventsView">
+            <div id="eventsContainer" class="events-grid">
+                <p>Loading events...</p>
+            </div>
+        </div>
+
+        <!-- 2. My Registrations View -->
+        <div id="registrationsView" class="my-regs-section">
+            <h2 style="font-size: 20px; margin-bottom: 12px;">Manage Your Registrations</h2>
+            <p style="color: #94a3b8; font-size: 14px; margin-bottom: 16px;">Enter the email you used while registering to view or cancel tickets.</p>
+            <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                <input type="email" id="searchEmail" class="form-input" style="margin-bottom: 0;" placeholder="e.g. manan@example.com" />
+                <button class="btn" style="width: auto; padding: 0 24px;" onclick="loadUserRegistrations()">Search</button>
+            </div>
+            <div id="ticketsContainer"></div>
+        </div>
+    </div>
+
+    <!-- Registration Modal -->
+    <div id="regModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalEventTitle" style="margin-bottom: 14px; color: #38bdf8;">Register for Event</h3>
+            <input type="text" id="userName" class="form-input" placeholder="Your Full Name" required />
+            <input type="email" id="userEmail" class="form-input" placeholder="Your Email Address" required />
+            <div class="modal-actions">
+                <button class="btn" onclick="submitRegistration()">Confirm Seat</button>
+                <button class="btn" style="background: #334155;" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedEventId = null;
+
+        // Load all events on page load
+        async function fetchEvents() {
+            const res = await fetch('/api/events');
+            const data = await res.json();
+            const container = document.getElementById('eventsContainer');
+            container.innerHTML = '';
+
+            data.events.forEach(ev => {
+                const isFull = ev.seats_left <= 0;
+                container.innerHTML += `
+                    <div class="event-card">
+                        <div>
+                            <div class="event-title">${ev.title}</div>
+                            <div class="event-desc">${ev.description}</div>
+                            <div class="event-info">📅 <b>Date:</b> ${ev.date}</div>
+                            <div class="event-info">📍 <b>Location:</b> ${ev.location}</div>
+                            <div class="badge ${isFull ? 'badge-red' : 'badge-green'}">
+                                ${isFull ? 'Sold Out' : ev.seats_left + ' Seats Available'}
+                            </div>
+                        </div>
+                        <button class="btn" ${isFull ? 'disabled style="opacity: 0.5;"' : ''} onclick="openModal(${ev.id}, '${ev.title}')">
+                            ${isFull ? 'Full' : 'Register Now'}
+                        </button>
+                    </div>
+                `;
+            });
+        }
+
+        function openModal(id, title) {
+            selectedEventId = id;
+            document.getElementById('modalEventTitle').textContent = 'Register: ' + title;
+            document.getElementById('regModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('regModal').style.display = 'none';
+        }
+
+        async function submitRegistration() {
+            const name = document.getElementById('userName').value.trim();
+            const email = document.getElementById('userEmail').value.trim();
+            if (!name || !email) return alert('Please enter both Name and Email!');
+
+            const res = await fetch(`/api/events/${selectedEventId}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.error);
+            } else {
+                alert('🎉 Seat Booked Successfully!');
+                closeModal();
+                fetchEvents();
+            }
+        }
+
+        async function loadUserRegistrations() {
+            const email = document.getElementById('searchEmail').value.trim();
+            if (!email) return alert('Enter email!');
+            const res = await fetch(`/api/registrations?email=${encodeURIComponent(email)}`);
+            const data = await res.json();
+            const container = document.getElementById('ticketsContainer');
+            container.innerHTML = '';
+
+            if (data.registrations.length === 0) {
+                container.innerHTML = '<p style="color: #94a3b8; margin-top: 10px;">No registered events found for this email.</p>';
+                return;
+            }
+
+            data.registrations.forEach(r => {
+                container.innerHTML += `
+                    <div class="ticket-card">
+                        <div>
+                            <div class="ticket-title">${r.title}</div>
+                            <div class="ticket-meta">📅 Date: ${r.date} | 📍 Location: ${r.location}</div>
+                            <div class="ticket-meta" style="color: #38bdf8;">Registered for: ${r.user_name} (${r.user_email})</div>
+                        </div>
+                        <button class="btn btn-danger" style="width: auto; padding: 8px 16px;" onclick="cancelTicket(${r.reg_id})">Cancel Ticket</button>
+                    </div>
+                `;
+            });
+        }
+
+        async function cancelTicket(regId) {
+            if (!confirm('Are you sure you want to cancel this registration?')) return;
+            const res = await fetch(`/api/registrations/${regId}`, { method: 'DELETE' });
+            const data = await res.json();
+            alert(data.message || data.error);
+            loadUserRegistrations();
+            fetchEvents();
+        }
+
+        function switchTab(tab) {
+            const btns = document.querySelectorAll('.tab-btn');
+            btns[0].classList.toggle('active', tab === 'events');
+            btns[1].classList.toggle('active', tab === 'registrations');
+            document.getElementById('eventsView').style.display = tab === 'events' ? 'block' : 'none';
+            document.getElementById('registrationsView').style.display = tab === 'registrations' ? 'block' : 'none';
+        }
+
+        fetchEvents();
+    </script>
+</body>
+</html>
